@@ -1,6 +1,6 @@
 # my_first_flutter_project
 
-A new Flutter project.
+This app allows you to access different activities. There is a timer, calorie calculator and workout checklist. Make sure to click get started at first then you can enter any page after. 
 
 ## Getting Started
 
