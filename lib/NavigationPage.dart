@@ -126,6 +126,12 @@ class _DietPageState extends State<DietPage> {
               },
               child: Text('Calculate Now'),
             ),
+            ElevatedButton(
+              onPressed: () {
+                _saveData(); // Call the save function here
+              },
+              child: Text('Save Calories'),
+            ),
             Expanded(
               child: ListView.builder(
                 itemCount: _dailyCalories.length,
@@ -189,18 +195,17 @@ class _DietPageState extends State<DietPage> {
   }
 
   void _saveData() async {
-    List<Map<String, dynamic>> data = [];
-    _dailyCalories.forEach((entry) {
-      data.add({
-        'date': entry.date,
-        'calories': entry.calories,
-      });
+    // Create a new entry with today's date and total calories
+    Map<String, dynamic> newEntry = {
+      'date': DateTime.now().toIso8601String(), // Save the current date
+      'calories': _totalCalories,
+    };
+
+    await _dbHelper.insertEntry('DietEntries', newEntry); // Save to database
+    _loadData(); // Reload data after saving
+    setState(() {
+      _totalCalories = 0; // Reset total calories after saving
     });
-
-    // Delete existing data before saving new data to avoid duplication
-    await _dbHelper.deleteAllEntries('DietEntries');
-
-    await _dbHelper.insertMultipleEntries('DietEntries', data);
   }
 }
 
@@ -233,21 +238,32 @@ class _InteractivePageState extends State<InteractivePage> {
   Timer? _timer;
   int _counter = 0;
   bool _isTimerRunning = false;
+  final TextEditingController _timeController = TextEditingController();
 
   void _startTimer() {
-    if (!_isTimerRunning) {
-      _timer = Timer.periodic(Duration(seconds: 1), (timer) {
-        setState(() {
-          _counter++;
-        });
+    if (_timeController.text.isNotEmpty) {
+      setState(() {
+        _counter = int.parse(_timeController.text);
+        _isTimerRunning = true;
       });
-      _isTimerRunning = true;
+
+      _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+        if (_counter > 0) {
+          setState(() {
+            _counter--;
+          });
+        } else {
+          _stopTimer(); // Stop the timer when it reaches zero
+        }
+      });
     }
   }
 
   void _stopTimer() {
     _timer?.cancel();
-    _isTimerRunning = false;
+    setState(() {
+      _isTimerRunning = false;
+    });
   }
 
   void _resetTimer() {
@@ -255,6 +271,7 @@ class _InteractivePageState extends State<InteractivePage> {
     setState(() {
       _counter = 0;
       _isTimerRunning = false;
+      _timeController.clear(); // Clear the input field
     });
   }
 
@@ -262,29 +279,45 @@ class _InteractivePageState extends State<InteractivePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Timer: $_counter seconds'),
-            SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ElevatedButton(
-                  onPressed: _startTimer,
-                  child: Text('Start Timer'),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0), // Added padding for the entire layout
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Countdown Timer: $_counter seconds',
+                style: TextStyle(fontSize: 20), // Reduced font size
+              ),
+              SizedBox(height: 12), // Reduced space
+              TextField(
+                controller: _timeController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Enter time in seconds',
+                  border: OutlineInputBorder(), // Added border for better visibility
                 ),
-                ElevatedButton(
-                  onPressed: _stopTimer,
-                  child: Text('Stop Timer'),
-                ),
-                ElevatedButton(
-                  onPressed: _resetTimer,
-                  child: Text('Reset Timer'),
-                ),
-              ],
-            ),
-          ],
+                style: TextStyle(fontSize: 16), // Smaller text for input
+              ),
+              SizedBox(height: 12), // Reduced space
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton(
+                    onPressed: _isTimerRunning ? null : _startTimer,
+                    child: Text('Start', style: TextStyle(fontSize: 14)), // Smaller button text
+                  ),
+                  ElevatedButton(
+                    onPressed: _stopTimer,
+                    child: Text('Stop', style: TextStyle(fontSize: 14)), // Smaller button text
+                  ),
+                  ElevatedButton(
+                    onPressed: _resetTimer,
+                    child: Text('Reset', style: TextStyle(fontSize: 14)), // Smaller button text
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -293,6 +326,7 @@ class _InteractivePageState extends State<InteractivePage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _timeController.dispose();
     super.dispose();
   }
 }
@@ -339,10 +373,9 @@ class _SoloPageState extends State<SoloPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Workouts should be 30 seconds each',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'Workouts',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 20),
             Expanded(
               child: ListView.builder(
                 itemCount: _tasks.length,
@@ -350,7 +383,7 @@ class _SoloPageState extends State<SoloPage> {
                   return CheckboxListTile(
                     title: Text(_tasks[index].name),
                     value: _tasks[index].completed,
-                    onChanged: (value) {
+                    onChanged: (bool? value) {
                       setState(() {
                         _tasks[index].completed = value!;
                       });
@@ -363,11 +396,6 @@ class _SoloPageState extends State<SoloPage> {
         ),
       ),
     );
-  }
-
-  void _saveData() {
-    // Save the data to a database or perform any necessary action
-    print('Tasks: $_tasks');
   }
 }
 
@@ -392,40 +420,42 @@ class PageFive extends StatelessWidget {
 }
 
 class TrainerPage extends StatelessWidget {
-  final List<String> contactNames = [
-    'Stephen',
-    'Brad',
-    'Amy',
-    'Marilyn',
-    'Max',
-    'Alfred',
-    'Ben',
-    'David',
-    'Cynthia',
-    'Samantha',
-    'Alex',
-    'Jacob',
-    'Jamie',
-    'Isabel',
-    'Tiffany',
-    'Justin',
-    'Jonathan',
-    'Ethan',
-    'Selena',
-    'Kate'
+  final List<Map<String, String>> trainers = [
+    {'name': 'Stephen', 'specialty': 'Running', 'description': 'An expert in running techniques to improve endurance and speed.'},
+    {'name': 'Amy', 'specialty': 'Sit-ups', 'description': 'Focuses on core-strengthening exercises, including effective sit-up techniques.'},
+    {'name': 'Brad', 'specialty': 'Pull-ups', 'description': 'Specializes in upper body strength and perfecting pull-up form.'},
+    {'name': 'Cynthia', 'specialty': 'Jumping Jacks', 'description': 'Leads high-energy cardio sessions incorporating jumping jacks.'},
+    {'name': 'Marilyn', 'specialty': 'Wall Sits', 'description': 'Teaches techniques to build leg strength and endurance through wall sits.'},
+    {'name': 'David', 'specialty': 'Abdominal Crunch', 'description': 'A core training expert, focusing on safe and effective crunch variations.'},
+    {'name': 'Max', 'specialty': 'Squat', 'description': 'Specializes in lower body strength training with squats as a cornerstone exercise.'},
+    {'name': 'Ben', 'specialty': 'Plank', 'description': 'Teaches planking techniques to improve core stability and endurance.'},
+    {'name': 'Samantha', 'specialty': 'Lunge', 'description': 'Focuses on building strength and balance through lunges and related exercises.'},
+    {'name': 'Selena', 'specialty': 'Side Plank', 'description': 'Combines core stability and oblique strengthening with side plank exercises.'},
+    {'name': 'Justin', 'specialty': 'High Knees', 'description': 'Incorporates high knees into dynamic cardio workouts for agility and endurance.'},
+    {'name': 'Jonathan', 'specialty': '30-second Workouts', 'description': 'Designs intense 30-second workout routines tailored to individual needs.'},
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: ListView.builder(
-        itemCount: contactNames.length,
+        itemCount: trainers.length,
         itemBuilder: (context, index) {
+          final trainer = trainers[index];
           return ListTile(
             leading: CircleAvatar(
-              child: Text(contactNames[index][0]),
+              child: Text(trainer['name']![0]),
             ),
-            title: Text(contactNames[index]),
+            title: Text(trainer['name']!),
+            subtitle: Text(trainer['specialty']!),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TrainerDetailPage(trainer: trainer),
+                ),
+              );
+            },
           );
         },
       ),
@@ -433,60 +463,86 @@ class TrainerPage extends StatelessWidget {
   }
 }
 
+class TrainerDetailPage extends StatelessWidget {
+  final Map<String, String> trainer;
+
+  TrainerDetailPage({required this.trainer});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(trainer['name']!),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              trainer['name']!,
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            Text(
+              'Specialty: ${trainer['specialty']}',
+              style: TextStyle(fontSize: 18),
+            ),
+            SizedBox(height: 20),
+            Text(
+              trainer['description']!,
+              style: TextStyle(fontSize: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 class DatabaseHelper {
+  static final DatabaseHelper _instance = DatabaseHelper._internal();
   static Database? _database;
-  static const String dbName = 'my_database.db';
+
+  factory DatabaseHelper() {
+    return _instance;
+  }
+
+  DatabaseHelper._internal();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
 
-    _database = await initDatabase();
+    _database = await _initDatabase();
     return _database!;
   }
 
-  Future<Database> initDatabase() async {
-    String path = join(await getDatabasesPath(), dbName);
-    return await openDatabase(path, version: 1, onCreate: _createDatabase);
+  Future<Database> _initDatabase() async {
+    String path = join(await getDatabasesPath(), 'diet_database.db');
+    return await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) {
+        return db.execute(
+          'CREATE TABLE DietEntries(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, calories INTEGER)',
+        );
+      },
+    );
   }
 
-  Future<void> _createDatabase(Database db, int version) async {
-    await db.execute('''
-         CREATE TABLE DietEntries(
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           date TEXT,
-           calories INTEGER
-         )
-       ''');
-    await db.execute('''
-         CREATE TABLE SoloTasks(
-           id INTEGER PRIMARY KEY AUTOINCREMENT,
-           name TEXT,
-           completed INTEGER
-         )
-       ''');
-  }
-
-  Future<List<Map<String, dynamic>>> getAllEntries(String tableName) async {
+  Future<void> insertEntry(String table, Map<String, dynamic> data) async {
     final db = await database;
-    return await db.query(tableName);
+    await db.insert(table, data);
   }
 
-  Future<void> deleteEntry(String tableName, int id) async {
+  Future<List<Map<String, dynamic>>> getAllEntries(String table) async {
     final db = await database;
-    await db.delete(tableName, where: 'id = ?', whereArgs: [id]);
+    return await db.query(table);
   }
 
-  Future<void> deleteAllEntries(String tableName) async {
+  Future<void> deleteEntry(String table, int id) async {
     final db = await database;
-    await db.delete(tableName);
-  }
-
-  Future<void> insertMultipleEntries(String tableName, List<Map<String, dynamic>> entries) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      for (var entry in entries) {
-        await txn.insert(tableName, entry);
-      }
-    });
+    await db.delete(table, where: 'id = ?', whereArgs: [id]);
   }
 }
